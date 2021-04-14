@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/reboot.h>
 #include <sys/wait.h>
 #include <cutils/android_reboot.h>
@@ -36,10 +37,30 @@ int setup_fs(const char *blockdev)
     }
     snprintf(buf, sizeof(buf), "/dev/block/%s", blockdev);
 
-    if (!partition_wiped(buf)) {
-        fprintf(stderr,"device %s not wiped, probably encrypted, not wiping\n", blockdev);
-        return 0;
-    }
+    int fd = open("/proc/cmdline", O_RDONLY);
+    char cmdline[1024];
+    char *ptr;
+	if (fd >= 0) {
+		int n = read(fd, cmdline, 1023);
+		if (n < 0) n = 0;
+
+		/* get rid of trailing newline, it happens */
+		if (n > 0 && cmdline[n-1] == '\n') n--;
+
+		cmdline[n] = 0;
+		close(fd);
+	} else {
+		cmdline[0] = 0;
+	}
+	ptr = strstr(cmdline, "boot_type=1");
+	if (ptr == NULL) {//normal start
+		if (!partition_wiped(buf)) {
+            fprintf(stderr,"device %s not wiped, probably encrypted, not wiping\n", blockdev);
+            return 0;
+		}
+    }else{//sdcard start
+        fprintf(stderr,"device is starting from card_num_0,don't check partition_wiped\n");
+	}
 
     fprintf(stderr,"+++\n");
 
@@ -52,7 +73,6 @@ int setup_fs(const char *blockdev)
         execl(mkfs, mkfs, buf, NULL);
         exit(-1);
     }
-
     while ((pid=waitpid(-1, &status, 0)) != child) {
         if (pid == -1) {
             fprintf(stderr, "error: setup_fs: waitpid failed!\n");
@@ -61,7 +81,7 @@ int setup_fs(const char *blockdev)
     }
 
     fprintf(stderr,"---\n");
-    return 1;
+    return 0;
 }
 
 
